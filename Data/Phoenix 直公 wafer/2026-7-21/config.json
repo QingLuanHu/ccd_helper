@@ -1,0 +1,61 @@
+{
+  "tools": [
+    {
+      "toolsImage":["tools1.png", "tools2.png", "tools3.png", "tools4.png", "tools5.png", "tools6.png", "tools7.png"]
+    }
+  ],
+
+  "steps": [
+    {
+      "stepId": 1,
+      "stepImages": [ "steps1.png" ],
+      "boardImages": []
+    },
+    {
+      "stepId": 2,
+      "stepImages": [ "steps2.png" ],
+      "boardImages": [ "boards2.png" ]
+    },
+    {
+      "stepId": 3,
+      "stepImages": [ "steps3.png" ],
+      "boardImages": [ "boards3_1.png","boards3_2.png","boards3_3.png"]
+    },
+    {
+      "stepId": 4,
+      "stepImages": [ "steps4.png","steps4_1.png" ],
+      "boardImages": [ "boards4_1.png","boards4_2.png","boards4_3.png","boards4_4.png","boards4_5.png","boards4_6.png","boards4_7.png","boards4_8.png","boards4_9.png","boards4_10.png","boards4_11.png" ]
+    },
+    {
+      "stepId": 5,
+      "stepImages": [ "steps5.png" ],
+      "boardImages": [ "boards5_1.png","boards5_2.png" ]
+    },
+    {
+      "stepId": 6,
+      "stepImages": [ "steps6.png" ],
+      "boardImages": [  ]
+    },
+    {
+      "stepId": 7, 
+      "stepImages": [ "steps7.png" ],
+      "boardImages": [  ]
+    },
+    {
+      "stepId": 8,
+      "stepImages": [ "steps8.png" ],
+      "boardImages": [  ]
+    },
+    {
+      "stepId": 9,
+      "stepImages": [ "steps9.png" ],
+      "boardImages": [ ]
+    },
+    {
+      "stepId": 10,
+      "stepImages": [ "steps10.png" ],
+      "boardImages": [  ]
+    }
+  ],
+  "ErrorReason": ["Pin针歪斜", "屏蔽件顶伤模块", "屏蔽件压伤", "Pin针根部开裂", "B区缺料不饱和/破损", "C区破损", "C区屏蔽件露出", "弹高变形", "披风/毛刺", "异物", "导线破损"]
+}
