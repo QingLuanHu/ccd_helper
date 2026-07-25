@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+  <Name>ccd_helper</Name>
+  <Description>外观检查辅助系统 — 专为产线工位设计的电子放大镜智能检验终端</Description>
+  <Version>1.0.0</Version>
+  <Author>your-username</Author>
+  <License>仅供内部使用，未经授权不得分发或用于商业用途</License>
+  
+  <Features>
+    <Feature>硬件加速视频渲染（DirectShow VMR9）</Feature>
+    <Feature>3行4列九宫格布局（步骤区、工具区、看板区）</Feature>
+    <Feature>良品/不良品记录与CSV导出</Feature>
+    <Feature>多项目/版本管理</Feature>
+    <Feature>图片放大查看</Feature>
+    <Feature>键盘、鼠标多模式操作</Feature>
+    <Feature>底层帧率限制与显存定时刷新</Feature>
+    <Feature>单实例运行与双重授权验证</Feature>
+  </Features>
+
+  <TechStack>
+    <Item>框架：.NET 10.0 (Windows)</Item>
+    <Item>界面：WinForms</Item>
+    <Item>视频采集：DirectShow (DirectShowLib.Net)</Item>
+    <Item>视频渲染：VMR9</Item>
+    <Item>图像处理：System.Drawing (GDI+)</Item>
+    <Item>配置存储：JSON</Item>
+    <Item>日志记录：CSV</Item>
+    <Item>授权机制：XOR + Base64</Item>
+    <Item>构建工具：dotnet publish (自包含单文件)</Item>
+  </TechStack>
+
+  <QuickStart>
+    <Step>git clone https://github.com/your-username/ccd_helper.git</Step>
+    <Step>cd ccd_helper</Step>
+    <Step>dotnet restore</Step>
+    <Step>dotnet run</Step>
+  </QuickStart>
+
+  <DataStructure>
+    <Description>检验计划按以下结构放入 Data 目录：</Description>
+    <Example>
+      <Project>项目A</Project>
+      <Version>V1.0</Version>
+      <Files>
+        <File>config.json</File>
+        <File>steps1.png ~ stepsN.png</File>
+        <File>tools1.png ~ toolsN.png</File>
+        <File>boards1.png ~ boardsN.png</File>
+      </Files>
+    </Example>
+  </DataStructure>
+
+  <ConfigSchema>
+    <File>config.json</File>
+    <Schema>
+      <Field name="Tools">工具图片列表</Field>
+      <Field name="Steps">检查步骤列表（包含 StepImages 和 BoardImages）</Field>
+      <Field name="ErrorReason">不良原因选项（用于记录窗口）</Field>
+    </Schema>
+  </ConfigSchema>
+
+  <LicenseFiles>
+    <File path="C:\ccd_helper\license">固定密钥文件</File>
+    <File path="&lt;程序目录&gt;\Data\sequence.dat">加密有效期文件</File>
+  </LicenseFiles>
+
+  <ProjectStructure>
+    <File>Form1.cs</File>
+    <File>FormVideo.cs</File>
+    <File>SelectionForm.cs</File>
+    <File>ResultForm.cs</File>
+    <File>LicenseInputForm.cs</File>
+    <File>InspectionConfig.cs</File>
+    <File>Program.cs</File>
+    <File>publish.bat</File>
+    <Folder>Data/</Folder>
+    <Folder>Logs/</Folder>
+  </ProjectStructure>
+
+  <Shortcuts>
+    <Action key="→ / Right">切换至下一步/下一组</Action>
+    <Action key="← / Left">切换至上一步/上一组</Action>
+    <Action key="Enter">复位到第一步</Action>
+    <Action key="Esc">退出程序</Action>
+    <Action mouse="右键点击空白区域">切换至下一步/下一组</Action>
+    <Action mouse="左键点击空白区域">切换至上一步/上一组</Action>
+  </Shortcuts>
+
+  <License>本软件仅供内部使用，未经授权不得分发或用于商业用途。</License>
+  <Contact>如有问题或建议，请提交 Issue 或联系项目维护者。</Contact>
+</Project>
