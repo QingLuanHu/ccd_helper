@@ -13,7 +13,7 @@
     <Feature>多项目/版本管理</Feature>
     <Feature>图片放大查看</Feature>
     <Feature>键盘、鼠标多模式操作</Feature>
-    <Feature>底层帧率限制与显存定时刷新</Feature>
+    <Feature>底层帧率限制与显存定时刷新,底层帧率需小于摄像头最大帧率，否则会出现卡顿或画面撕裂</Feature>
     <Feature>单实例运行与双重授权验证</Feature>
   </Features>
 
