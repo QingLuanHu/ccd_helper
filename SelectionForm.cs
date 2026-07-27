@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Windows.Forms;
 using DirectShowLib;
 
@@ -21,6 +22,9 @@ namespace ccd_helper
         private Button btnOK, btnCancel;
         private Dictionary<string, List<string>> projectVersions;
         private List<string> cameraNames;
+
+        // 配置文件路径
+        private const string ConfigFilePath = @"D:\ccd_helper\config.json";
 
         public SelectionForm()
         {
@@ -73,6 +77,9 @@ namespace ccd_helper
             }
 
             BuildUI(projectNames);
+
+            // 加载保存的设置
+            LoadSavedSettings();
         }
 
         private void BuildUI(List<string> projectNames)
@@ -136,31 +143,26 @@ namespace ccd_helper
             mainLayout.Controls.Add(lblRefresh, 0, 4);
             mainLayout.Controls.Add(nudRefresh, 1, 4);
 
-            // ---- 按钮行：采用 1:2:1 比例（确定、空白、取消） ----
+            // ---- 按钮行：取消在左，确定在右，1:2:1 ----
             TableLayoutPanel buttonLayout = new TableLayoutPanel();
             buttonLayout.Dock = DockStyle.Fill;
             buttonLayout.ColumnCount = 3;
             buttonLayout.RowCount = 1;
-            buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));  // 确定
-            buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));  // 空白
-            buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));  // 取消
+            buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
+            buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+            buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
 
             btnCancel = new Button { Text = "取消", Width = 80, Height = 30, Anchor = AnchorStyles.Left };
             btnOK = new Button { Text = "确定", Width = 80, Height = 30, Anchor = AnchorStyles.Right };
 
-            // 将按钮放入对应列
-            buttonLayout.Controls.Add(btnOK, 2, 0);
             buttonLayout.Controls.Add(btnCancel, 0, 0);
+            buttonLayout.Controls.Add(btnOK, 2, 0);
 
-            // 占位列不放控件，自动空白
-
-            // 将 buttonLayout 放入主布局的最后一行的第二个单元格（跨两列）
             mainLayout.Controls.Add(buttonLayout, 0, 5);
             mainLayout.SetColumnSpan(buttonLayout, 2);
 
             this.Controls.Add(mainLayout);
 
-            // 事件
             btnOK.Click += (s, e) =>
             {
                 if (cmbProject.SelectedItem == null || cmbVersion.SelectedItem == null || cmbCamera.SelectedItem == null)
@@ -174,11 +176,93 @@ namespace ccd_helper
                 SelectedCamera = cmbCamera.SelectedItem.ToString()!;
                 TargetFps = (int)nudFps.Value;
                 RefreshIntervalMinutes = (int)nudRefresh.Value;
+
+                SaveSettings();
                 this.DialogResult = DialogResult.OK;
             };
             btnCancel.Click += (s, e) => this.DialogResult = DialogResult.Cancel;
 
             if (projectNames.Count > 0) cmbProject.SelectedIndex = 0;
+        }
+
+        // ========== 配置文件读写 ==========
+        private class ConfigData
+        {
+            public string Project { get; set; } = "";
+            public string Version { get; set; } = "";
+            public string Camera { get; set; } = "";
+            public int TargetFps { get; set; } = 30;
+            public int RefreshMinutes { get; set; } = 5;
+        }
+
+        private void SaveSettings()
+        {
+            try
+            {
+                var config = new ConfigData
+                {
+                    Project = SelectedProject,
+                    Version = SelectedVersion,
+                    Camera = SelectedCamera,
+                    TargetFps = TargetFps,
+                    RefreshMinutes = RefreshIntervalMinutes
+                };
+
+                string json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
+
+                // 确保目录存在
+                string dir = Path.GetDirectoryName(ConfigFilePath)!;
+                if (!Directory.Exists(dir))
+                    Directory.CreateDirectory(dir);
+
+                File.WriteAllText(ConfigFilePath, json, System.Text.Encoding.UTF8);
+            }
+            catch (Exception ex)
+            {
+                // 写入失败不影响主流程，静默忽略或可记录日志
+                System.Diagnostics.Debug.WriteLine($"保存配置失败: {ex.Message}");
+            }
+        }
+
+        private void LoadSavedSettings()
+        {
+            try
+            {
+                if (!File.Exists(ConfigFilePath))
+                    return;
+
+                string json = File.ReadAllText(ConfigFilePath, System.Text.Encoding.UTF8);
+                var config = JsonSerializer.Deserialize<ConfigData>(json);
+                if (config == null) return;
+
+                // 应用数值
+                TargetFps = config.TargetFps;
+                RefreshIntervalMinutes = config.RefreshMinutes;
+                nudFps.Value = Math.Clamp(TargetFps, 5, 60);
+                nudRefresh.Value = Math.Clamp(RefreshIntervalMinutes, 0, 30);
+
+                // 项目
+                if (!string.IsNullOrEmpty(config.Project) && cmbProject.Items.Contains(config.Project))
+                {
+                    cmbProject.SelectedItem = config.Project;
+                }
+
+                // 摄像头
+                if (!string.IsNullOrEmpty(config.Camera) && cmbCamera.Items.Contains(config.Camera))
+                {
+                    cmbCamera.SelectedItem = config.Camera;
+                }
+
+                // 版本（在项目选中后加载）
+                if (!string.IsNullOrEmpty(config.Version) && cmbVersion.Items.Contains(config.Version))
+                {
+                    cmbVersion.SelectedItem = config.Version;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"加载配置失败: {ex.Message}");
+            }
         }
 
         private static string? FindDataPath()
