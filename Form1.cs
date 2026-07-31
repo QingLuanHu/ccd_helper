@@ -907,7 +907,7 @@ namespace ccd_helper
         {
             try
             {
-                string logDir = Path.Combine(Application.StartupPath, "Logs");
+                string logDir = @"D:\ccd_helper\Logs";
                 if (!Directory.Exists(logDir))
                     Directory.CreateDirectory(logDir);
 
