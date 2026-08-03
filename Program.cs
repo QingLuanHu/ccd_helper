@@ -11,7 +11,7 @@ namespace ccd_helper
 {
     internal static class Program
     {
-        // 软件版本
+        // ========== 自定义软件业务版本（与 Data/version.json 中的 SoftwareVersion 对应） ==========
         private const string LOCAL_SOFTWARE_VERSION = "2.0.2";
 
         [DllImport("user32.dll")]
@@ -169,31 +169,34 @@ namespace ccd_helper
                 needUpdateLocal = true;
             }
 
-            // ----- 同步各计划版本 -----
+            // ----- 同步各测试计划版本（增加物理目录检查） -----
             foreach (var kv in cloudManifest.Plans)
             {
                 string planName = kv.Key;
                 string cloudVer = kv.Value;
 
-                if (!localManifest.Plans.TryGetValue(planName, out string? localVer) || localVer != cloudVer)
+                // ★ 检查本地该版本目录是否存在（以 config.json 作为完整性标志）
+                string localPlanVerDir = Path.Combine(dataPath, planName, cloudVer);
+                string localConfigPath = Path.Combine(localPlanVerDir, "config.json");
+                bool planPhysicallyExists = File.Exists(localConfigPath);
+
+                // 条件：版本号不一致 或 本地物理文件缺失
+                if (!localManifest.Plans.TryGetValue(planName, out string? localVer) ||
+                    localVer != cloudVer ||
+                    !planPhysicallyExists)
                 {
-                    // 从云端（使用新的 cloudRoot）复制该计划的最新版本到本地
                     SyncPlanFromCloud(cloudRoot, dataPath, planName, cloudVer);
                     localManifest.Plans[planName] = cloudVer;
                     needUpdateLocal = true;
                 }
             }
 
-            // 删除云端已移除的计划
+            // 删除云端已移除的计划（本地的物理目录保留，但 version.json 中不再引用）
             var plansToRemove = localManifest.Plans.Keys.Except(cloudManifest.Plans.Keys).ToList();
             foreach (var plan in plansToRemove)
             {
                 localManifest.Plans.Remove(plan);
-                string localPlanDir = Path.Combine(dataPath, plan);
-                if (Directory.Exists(localPlanDir))
-                {
-                    try { Directory.Delete(localPlanDir, true); } catch { }
-                }
+                // 注意：不删除物理目录，仅从配置中移除
                 needUpdateLocal = true;
             }
 
@@ -230,7 +233,7 @@ namespace ccd_helper
         }
 
         /// <summary>
-        /// 从云端复制指定计划的指定版本到本地（会先删除该计划下所有旧版本）
+        /// 从云端复制指定计划的指定版本到本地（仅覆盖目标版本，不影响其他版本）
         /// </summary>
         private static void SyncPlanFromCloud(string cloudRoot, string localDataRoot, string planName, string version)
         {
@@ -240,20 +243,19 @@ namespace ccd_helper
             string localPlanRoot = Path.Combine(localDataRoot, planName);
             string targetDir = Path.Combine(localPlanRoot, version);
 
-            // 删除该计划下所有旧版本目录（只保留最新的）
-            if (Directory.Exists(localPlanRoot))
+            // 只删除目标版本目录（用于干净覆盖/修复），保留其他版本目录不动
+            if (Directory.Exists(targetDir))
             {
-                foreach (var dir in Directory.GetDirectories(localPlanRoot))
-                {
-                    try { Directory.Delete(dir, true); } catch { }
-                }
+                try { Directory.Delete(targetDir, true); } catch { }
             }
-            else
+
+            // 确保计划根目录存在
+            if (!Directory.Exists(localPlanRoot))
             {
                 Directory.CreateDirectory(localPlanRoot);
             }
 
-            // 递归复制
+            // 递归复制云端目标目录到本地
             CopyDirectoryRecursive(sourceDir, targetDir);
         }
 
