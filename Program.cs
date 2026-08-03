@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -7,9 +8,15 @@ namespace ccd_helper
 {
     internal static class Program
     {
+        [DllImport("user32.dll")]
+        private static extern bool SetProcessDPIAware();
+
         [STAThread]
         static void Main()
         {
+            // ★ 启用 DPI 感知，使屏幕坐标与物理像素一致
+            SetProcessDPIAware();
+
             // 单实例检测
             const string mutexName = "Global\\796796797";
             bool createdNew;
@@ -24,7 +31,7 @@ namespace ccd_helper
                 // 1. 检查固定密钥 license 文件（路径固定）
                 if (!CheckLicenseFile())
                 {
-                    MessageBox.Show("授权失败！请确保 C:\\ccd_helper\\license 文件存在且内容正确。", "授权错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    MessageBox.Show("授权失败！", "授权错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
@@ -43,7 +50,6 @@ namespace ccd_helper
                         else
                         {
                             MessageBox.Show("授权码无效，请重新输入。", "授权失败", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                            // 可考虑循环输入，为简化此处退出
                             return;
                         }
                     }

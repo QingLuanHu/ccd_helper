@@ -47,6 +47,7 @@ namespace ccd_helper
         private bool _isEnlarged;
         private Rectangle _enlargeRect;
 
+        private Rectangle _btnPhotoRect;
         private Rectangle _btnPassRect;
         private Rectangle _btnFailRect;
         private Rectangle _btnLoadRect;
@@ -606,13 +607,27 @@ namespace ccd_helper
             int btnWidth = 60;
             int btnHeight = 40;
             int spacing = 8;
-            int btnCount = 3;
+            int btnCount = 4;
             int totalBtnHeight = btnCount * btnHeight + (btnCount - 1) * spacing;
             int startY = y + (height - totalBtnHeight - 35) / 2;
             int right = x + width;
 
+            // 拍照
+            _btnPhotoRect = new Rectangle(right - btnWidth, startY, btnWidth, btnHeight);
+            using (SolidBrush brush = new SolidBrush(Color.DodgerBlue))
+            {
+                g.FillRectangle(brush, _btnPhotoRect);
+            }
+            g.DrawRectangle(Pens.Black, _btnPhotoRect);
+            using (Brush textBrush = new SolidBrush(Color.White))
+            using (Font font = new Font("微软雅黑", 9, FontStyle.Bold))
+            using (StringFormat sf = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+            {
+                g.DrawString("拍照", font, textBrush, _btnPhotoRect, sf);
+            }
+
             // 良品
-            _btnPassRect = new Rectangle(right - btnWidth, startY, btnWidth, btnHeight);
+            _btnPassRect = new Rectangle(right - btnWidth, startY + btnHeight + spacing, btnWidth, btnHeight);
             using (SolidBrush brush = new SolidBrush(Color.Green))
             {
                 g.FillRectangle(brush, _btnPassRect);
@@ -626,7 +641,7 @@ namespace ccd_helper
             }
 
             // 不良品
-            _btnFailRect = new Rectangle(right - btnWidth, startY + btnHeight + spacing, btnWidth, btnHeight);
+            _btnFailRect = new Rectangle(right - btnWidth, startY + 2 * (btnHeight + spacing), btnWidth, btnHeight);
             using (SolidBrush brush = new SolidBrush(Color.Red))
             {
                 g.FillRectangle(brush, _btnFailRect);
@@ -640,7 +655,7 @@ namespace ccd_helper
             }
 
             // 加载计划
-            _btnLoadRect = new Rectangle(right - btnWidth, startY + 2 * (btnHeight + spacing), btnWidth, btnHeight);
+            _btnLoadRect = new Rectangle(right - btnWidth, startY + 3 * (btnHeight + spacing), btnWidth, btnHeight);
             using (SolidBrush brush = new SolidBrush(Color.LightGray))
             {
                 g.FillRectangle(brush, _btnLoadRect);
@@ -653,7 +668,7 @@ namespace ccd_helper
                 g.DrawString("计划", font, textBrush, _btnLoadRect, sf);
             }
 
-            // 水印
+            // 水印（动态调整字号）
             string watermark = $"计划名: {_projectName ?? "未加载"}  版本: {_version ?? "未加载"}";
             Rectangle rect = new Rectangle(x, y + height - 25, width, 25);
             float fontSize = 12;
@@ -674,6 +689,53 @@ namespace ccd_helper
             fontWatermark.Dispose();
         }
 
+        // ========== 拍照逻辑（正确截取全屏） ==========
+        private void TakePhoto()
+        {
+            try
+            {
+                // 获取主屏幕边界（物理像素，因为 Program.cs 已启用 DPI 感知）
+                Rectangle screenBounds = Screen.PrimaryScreen.Bounds;
+                using (Bitmap fullScreen = new Bitmap(screenBounds.Width, screenBounds.Height))
+                {
+                    using (Graphics g = Graphics.FromImage(fullScreen))
+                    {
+                        g.CopyFromScreen(0, 0, 0, 0, screenBounds.Size);
+                    }
+
+                    // 可选：如果需要只截取主窗口客户区，可在此裁剪
+                    // 但根据需求，直接截取全屏更完整（包含副窗口）
+                    // 如果希望只截取客户区，请取消下面注释并注释掉上面直接使用 fullScreen 的代码
+                    /*
+                    Rectangle clientRect = this.RectangleToScreen(this.ClientRectangle);
+                    Rectangle intersectRect = Rectangle.Intersect(clientRect, screenBounds);
+                    if (intersectRect.Width <= 0 || intersectRect.Height <= 0)
+                    {
+                        MessageBox.Show("窗口不可见，无法截图。", "提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    using (Bitmap screenshot = fullScreen.Clone(intersectRect, fullScreen.PixelFormat))
+                    {
+                        using (var photoForm = new PhotoForm(screenshot))
+                        {
+                            photoForm.ShowDialog(this);
+                        }
+                    }
+                    */
+
+                    // 直接使用全屏截图
+                    using (var photoForm = new PhotoForm(fullScreen))
+                    {
+                        photoForm.ShowDialog(this);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"拍照失败: {ex.Message}", "错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
         // ========== 鼠标点击（仅处理按钮和图片放大） ==========
         private void Form1_MouseClick(object? sender, MouseEventArgs e)
         {
@@ -690,11 +752,12 @@ namespace ccd_helper
             Point pt = e.Location;
 
             // 2. 检测按钮（优先级最高）
+            if (_btnPhotoRect.Contains(pt)) { TakePhoto(); return; }
             if (_btnPassRect.Contains(pt)) { ShowResultDialog("良品"); return; }
             if (_btnFailRect.Contains(pt)) { ShowResultDialog("不良品"); return; }
             if (_btnLoadRect.Contains(pt)) { ReloadConfiguration(); return; }
 
-            // 3. 检测图片区域（左键放大，右键无操作）
+            // 3. 检测图片区域（左键放大）
             if (e.Button == MouseButtons.Left)
             {
                 int w = this.ClientSize.Width;
@@ -753,10 +816,10 @@ namespace ccd_helper
                     }
                 }
             }
-            // 空白区域不再处理切换（已移至副窗口）
+            // 空白区域不做处理（由副窗口的鼠标事件处理切换）
         }
 
-        // ========== 步进/后退逻辑 ==========
+        // ========== 步进/后退逻辑（由副窗口调用） ==========
         private void HandleLeft()
         {
             if (boardImages.Count > 0 && currentBoardGroupIndex > 0)
