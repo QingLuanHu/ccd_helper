@@ -33,14 +33,47 @@ namespace ccd_helper
                     return;
                 }
 
-                // 2. 固定 License 检验
+                // 2. 云同步（含路径自更新、配置同步）
+                bool cloudAvailable = SyncCloud(out string effectiveCloudRoot);
+
+                // 3. ★ 从云端复制 sequence.dat 覆盖本地（无痕续期） ★
+                if (!string.IsNullOrEmpty(effectiveCloudRoot))
+                {
+                    string? dataPath = FindDataPath();
+                    if (dataPath != null)
+                    {
+                        string cloudSeqPath = Path.Combine(effectiveCloudRoot, "sequence.dat");
+                        string localSeqPath = Path.Combine(dataPath, "sequence.dat");
+                        if (File.Exists(cloudSeqPath))
+                        {
+                            try
+                            {
+                                File.Copy(cloudSeqPath, localSeqPath, true);
+                                // 静默成功，不弹窗
+                            }
+                            catch
+                            {
+                                // 静默失败，保留本地原有授权
+                            }
+                        }
+                    }
+                }
+
+                // 4. 软件版本强制校验（阻断式）
+                if (!CheckSoftwareVersion())
+                {
+                    // 内部已弹窗并退出
+                    return;
+                }
+
+                // 5. 固定 License 检验
                 if (!CheckLicenseFile())
                 {
                     MessageBox.Show("授权失败！", "授权错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
-                // 3. 有效期授权检验
+                // 6. 有效期授权检验（本地 Data/sequence.dat）
                 if (!CheckExpiry())
                 {
                     using var inputDialog = new LicenseInputForm();
@@ -58,18 +91,7 @@ namespace ccd_helper
                     }
                 }
 
-                // 4. 云盘同步（含路径自更新）
-                bool cloudAvailable = SyncCloud();
-
-                // 若云盘不可达，已弹窗提示，继续运行（使用本地数据）
-                // 5. 软件版本强制校验（阻断式）
-                if (!CheckSoftwareVersion())
-                {
-                    // 内部已弹窗并退出
-                    return;
-                }
-
-                // 6. 正常启动主窗体
+                // 7. 正常启动主窗体
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.Run(new Form1());
@@ -79,14 +101,17 @@ namespace ccd_helper
         // ======================== 云同步核心逻辑 ========================
 
         /// <summary>
-        /// 执行云同步（静默模式不弹窗），返回 true 表示成功或无需同步，false 表示云盘连接异常
+        /// 执行云同步，返回 true 表示成功或无需同步，false 表示云盘连接异常。
+        /// 同时输出当前有效的云端根路径，用于后续 sequence.dat 复制。
         /// </summary>
-        public static bool SyncCloud(bool silent = false)
+        public static bool SyncCloud(out string effectiveCloudRoot)
         {
+            effectiveCloudRoot = null;
+
             string? dataPath = FindDataPath();
             if (dataPath == null)
             {
-                if (!silent) MessageBox.Show("未找到 Data 文件夹！", "错误");
+                MessageBox.Show("未找到 Data 文件夹！", "错误");
                 return false;
             }
 
@@ -114,6 +139,7 @@ namespace ccd_helper
 
             // 规范化云路径
             string cloudRoot = NormalizeCloudPath(localManifest.CloudBasePath);
+            effectiveCloudRoot = cloudRoot; // 初始赋值
 
             // 自引用检测：若云端路径指向本地 Data 自身，则跳过同步
             try
@@ -126,8 +152,7 @@ namespace ccd_helper
             // 检查云盘可达性
             if (!Directory.Exists(cloudRoot))
             {
-                if (!silent)
-                    MessageBox.Show($"云盘连接异常！\n路径：{cloudRoot}\n将使用本地数据继续运行。", "连接警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show($"云盘连接异常！\n路径：{cloudRoot}\n将使用本地数据继续运行。", "连接警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
 
@@ -150,15 +175,14 @@ namespace ccd_helper
 
             bool needUpdateLocal = false;
 
-            // ----- 同步 CloudBasePath -----
+            // ----- 同步 CloudBasePath（云端为空则保持不变） -----
             string normalizedLocal = NormalizeCloudPath(localManifest.CloudBasePath);
             string normalizedRemote = NormalizeCloudPath(cloudManifest.CloudBasePath);
-            if (!string.Equals(normalizedLocal, normalizedRemote, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(normalizedLocal, normalizedRemote, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(normalizedRemote))
             {
-                // 更新本地路径（保留云端原始写法）
                 localManifest.CloudBasePath = cloudManifest.CloudBasePath;
-                // 将当前使用的 cloudRoot 切换为新路径
                 cloudRoot = normalizedRemote;
+                effectiveCloudRoot = cloudRoot; // 更新为新的有效路径
                 needUpdateLocal = true;
             }
 
@@ -169,13 +193,13 @@ namespace ccd_helper
                 needUpdateLocal = true;
             }
 
-            // ----- 同步各测试计划版本（增加物理目录检查） -----
+            // ----- 同步各计划版本（增加物理目录检查） -----
             foreach (var kv in cloudManifest.Plans)
             {
                 string planName = kv.Key;
                 string cloudVer = kv.Value;
 
-                // ★ 检查本地该版本目录是否存在（以 config.json 作为完整性标志）
+                // 检查本地该版本目录是否存在（以 config.json 作为完整性标志）
                 string localPlanVerDir = Path.Combine(dataPath, planName, cloudVer);
                 string localConfigPath = Path.Combine(localPlanVerDir, "config.json");
                 bool planPhysicallyExists = File.Exists(localConfigPath);
