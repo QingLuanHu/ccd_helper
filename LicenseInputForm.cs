@@ -15,23 +15,28 @@ namespace ccd_helper
         {
             this.Text = "授权验证";
             this.StartPosition = FormStartPosition.CenterParent;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.MaximizeBox = false;
-            this.MinimizeBox = false;
-            this.Size = new System.Drawing.Size(420, 160);
+            // ★ 改为可调整大小的边框
+            this.FormBorderStyle = FormBorderStyle.Sizable;
+            // ★ 允许最大化（可选）
+            this.MaximizeBox = true;
+            this.MinimizeBox = true;
+            // ★ 增大初始尺寸
+            this.Size = new System.Drawing.Size(500, 300);
+            // ★ 设置最小尺寸，防止缩得太小
+            this.MinimumSize = new System.Drawing.Size(400, 180);
 
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.ColumnCount = 2;
             layout.RowCount = 3;
-            layout.Padding = new Padding(15);
+            layout.Padding = new Padding(20);
 
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // 输入框占据剩余空间
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
 
-            // 提示（跨两列）
+            // 提示标签
             Label lblPrompt = new Label();
             lblPrompt.Text = "请输入授权码：";
             lblPrompt.Font = new System.Drawing.Font("微软雅黑", 10);
@@ -39,16 +44,15 @@ namespace ccd_helper
             layout.Controls.Add(lblPrompt, 0, 0);
             layout.SetColumnSpan(lblPrompt, 2);
 
-            // 输入框（跨两列）
+            // 输入框（高度自动填充）
             txtLicense = new TextBox();
             txtLicense.Dock = DockStyle.Fill;
             txtLicense.Font = new System.Drawing.Font("微软雅黑", 10);
-            txtLicense.PasswordChar = '\0';
             txtLicense.TextChanged += (s, e) => btnOK.Enabled = !string.IsNullOrWhiteSpace(txtLicense.Text);
             layout.Controls.Add(txtLicense, 0, 1);
             layout.SetColumnSpan(txtLicense, 2);
 
-            // ---- 按钮行：1:2:1 比例 ----
+            // 按钮行
             TableLayoutPanel buttonLayout = new TableLayoutPanel();
             buttonLayout.Dock = DockStyle.Fill;
             buttonLayout.ColumnCount = 3;

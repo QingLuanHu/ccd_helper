@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -11,7 +12,6 @@ namespace ccd_helper
 {
     internal static class Program
     {
-        // ========== 自定义软件业务版本（与 Data/version.json 中的 SoftwareVersion 对应） ==========
         private const string LOCAL_SOFTWARE_VERSION = "2.0.2";
 
         [DllImport("user32.dll")]
@@ -22,7 +22,6 @@ namespace ccd_helper
         {
             SetProcessDPIAware();
 
-            // 1. 单进程检验
             const string mutexName = "Global\\796796797";
             bool createdNew;
             using (Mutex mutex = new Mutex(true, mutexName, out createdNew))
@@ -33,47 +32,28 @@ namespace ccd_helper
                     return;
                 }
 
-                // 2. 云同步（含路径自更新、配置同步）
-                bool cloudAvailable = SyncCloud(out string effectiveCloudRoot);
-
-                // 3. ★ 从云端复制 sequence.dat 覆盖本地（无痕续期） ★
-                if (!string.IsNullOrEmpty(effectiveCloudRoot))
+                // 显示启动画面（闪屏），在其中执行云同步
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                using (var splash = new SplashForm())
                 {
-                    string? dataPath = FindDataPath();
-                    if (dataPath != null)
-                    {
-                        string cloudSeqPath = Path.Combine(effectiveCloudRoot, "sequence.dat");
-                        string localSeqPath = Path.Combine(dataPath, "sequence.dat");
-                        if (File.Exists(cloudSeqPath))
-                        {
-                            try
-                            {
-                                File.Copy(cloudSeqPath, localSeqPath, true);
-                                // 静默成功，不弹窗
-                            }
-                            catch
-                            {
-                                // 静默失败，保留本地原有授权
-                            }
-                        }
-                    }
+                    Application.Run(splash);
                 }
 
-                // 4. 软件版本强制校验（阻断式）
+                // 软件版本验证
                 if (!CheckSoftwareVersion())
                 {
-                    // 内部已弹窗并退出
                     return;
                 }
 
-                // 5. 固定 License 检验
+                // 授权验证
                 if (!CheckLicenseFile())
                 {
                     MessageBox.Show("授权失败！", "授权错误", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
 
-                // 6. 有效期授权检验（本地 Data/sequence.dat）
+                // 有效期验证
                 if (!CheckExpiry())
                 {
                     using var inputDialog = new LicenseInputForm();
@@ -91,19 +71,13 @@ namespace ccd_helper
                     }
                 }
 
-                // 7. 正常启动主窗体
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+                // 启动主窗体
                 Application.Run(new Form1());
             }
         }
 
         // ======================== 云同步核心逻辑 ========================
 
-        /// <summary>
-        /// 执行云同步，返回 true 表示成功或无需同步，false 表示云盘连接异常。
-        /// 同时输出当前有效的云端根路径，用于后续 sequence.dat 复制。
-        /// </summary>
         public static bool SyncCloud(out string effectiveCloudRoot)
         {
             effectiveCloudRoot = null;
@@ -118,7 +92,6 @@ namespace ccd_helper
             string localManifestPath = Path.Combine(dataPath, "version.json");
             if (!File.Exists(localManifestPath))
             {
-                // 没有 version.json 视为无云配置，静默跳过
                 return true;
             }
 
@@ -137,11 +110,9 @@ namespace ccd_helper
             if (string.IsNullOrWhiteSpace(localManifest.CloudBasePath))
                 return true;
 
-            // 规范化云路径
             string cloudRoot = NormalizeCloudPath(localManifest.CloudBasePath);
-            effectiveCloudRoot = cloudRoot; // 初始赋值
+            effectiveCloudRoot = cloudRoot;
 
-            // 自引用检测：若云端路径指向本地 Data 自身，则跳过同步
             try
             {
                 if (string.Equals(Path.GetFullPath(cloudRoot), Path.GetFullPath(dataPath), StringComparison.OrdinalIgnoreCase))
@@ -149,14 +120,12 @@ namespace ccd_helper
             }
             catch { }
 
-            // 检查云盘可达性
             if (!Directory.Exists(cloudRoot))
             {
                 MessageBox.Show($"云盘连接异常！\n路径：{cloudRoot}\n将使用本地数据继续运行。", "连接警告", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return false;
             }
 
-            // 读取云端 version.json
             string cloudManifestPath = Path.Combine(cloudRoot, "version.json");
             if (!File.Exists(cloudManifestPath))
                 return true;
@@ -175,60 +144,85 @@ namespace ccd_helper
 
             bool needUpdateLocal = false;
 
-            // ----- 同步 CloudBasePath（云端为空则保持不变） -----
+            // ★ 修复1：使用 IsNullOrWhiteSpace 判断云端路径是否有效
             string normalizedLocal = NormalizeCloudPath(localManifest.CloudBasePath);
             string normalizedRemote = NormalizeCloudPath(cloudManifest.CloudBasePath);
-            if (!string.Equals(normalizedLocal, normalizedRemote, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(normalizedRemote))
+            if (!string.Equals(normalizedLocal, normalizedRemote, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(normalizedRemote))
             {
                 localManifest.CloudBasePath = cloudManifest.CloudBasePath;
                 cloudRoot = normalizedRemote;
-                effectiveCloudRoot = cloudRoot; // 更新为新的有效路径
+                effectiveCloudRoot = cloudRoot;
                 needUpdateLocal = true;
             }
 
-            // ----- 同步 SoftwareVersion -----
+            // 同步 SoftwareVersion
             if (localManifest.SoftwareVersion != cloudManifest.SoftwareVersion)
             {
                 localManifest.SoftwareVersion = cloudManifest.SoftwareVersion;
                 needUpdateLocal = true;
             }
 
-            // ----- 同步各计划版本（增加物理目录检查） -----
+            // 收集需要同步的计划（优先检查本地目录是否存在）
+            var plansToSync = new List<(string planName, string version)>();
             foreach (var kv in cloudManifest.Plans)
             {
                 string planName = kv.Key;
                 string cloudVer = kv.Value;
 
-                // 检查本地该版本目录是否存在（以 config.json 作为完整性标志）
+                // 检查本地目标目录是否存在且完整（以 config.json 为准）
                 string localPlanVerDir = Path.Combine(dataPath, planName, cloudVer);
                 string localConfigPath = Path.Combine(localPlanVerDir, "config.json");
                 bool planPhysicallyExists = File.Exists(localConfigPath);
 
-                // 条件：版本号不一致 或 本地物理文件缺失
-                if (!localManifest.Plans.TryGetValue(planName, out string? localVer) ||
-                    localVer != cloudVer ||
-                    !planPhysicallyExists)
+                if (planPhysicallyExists)
                 {
-                    SyncPlanFromCloud(cloudRoot, dataPath, planName, cloudVer);
-                    localManifest.Plans[planName] = cloudVer;
-                    needUpdateLocal = true;
+                    // 本地已有该版本，无需复制，但确保 manifest 版本正确
+                    if (!localManifest.Plans.TryGetValue(planName, out string? localVer) || localVer != cloudVer)
+                    {
+                        localManifest.Plans[planName] = cloudVer;
+                        needUpdateLocal = true;
+                    }
+                    continue;
                 }
+
+                // 目录不存在或不完整，需要同步
+                plansToSync.Add((planName, cloudVer));
             }
 
-            // 删除云端已移除的计划（本地的物理目录保留，但 version.json 中不再引用）
-            var plansToRemove = localManifest.Plans.Keys.Except(cloudManifest.Plans.Keys).ToList();
-            foreach (var plan in plansToRemove)
+            // 执行同步（直接复制，不刷新 UI）
+            if (plansToSync.Count > 0)
             {
-                localManifest.Plans.Remove(plan);
-                // 注意：不删除物理目录，仅从配置中移除
+                foreach (var (planName, version) in plansToSync)
+                {
+                    SyncPlanFromCloud(cloudRoot, dataPath, planName, version);
+                }
+
+                foreach (var (planName, version) in plansToSync)
+                {
+                    localManifest.Plans[planName] = version;
+                }
                 needUpdateLocal = true;
             }
 
-            // 保存更新后的本地 version.json
             if (needUpdateLocal)
             {
                 string updatedJson = JsonSerializer.Serialize(localManifest, new JsonSerializerOptions { WriteIndented = true });
                 File.WriteAllText(localManifestPath, updatedJson);
+            }
+
+            // ---- 复制 sequence.dat ----
+            if (!string.IsNullOrEmpty(effectiveCloudRoot))
+            {
+                string cloudSeqPath = Path.Combine(effectiveCloudRoot, "sequence.dat");
+                string localSeqPath = Path.Combine(dataPath, "sequence.dat");
+                if (File.Exists(cloudSeqPath))
+                {
+                    try
+                    {
+                        File.Copy(cloudSeqPath, localSeqPath, true);
+                    }
+                    catch { }
+                }
             }
 
             return true;
@@ -236,29 +230,18 @@ namespace ccd_helper
 
         // ======================== 辅助方法 ========================
 
-        /// <summary>
-        /// 路径规范化：自动识别本地盘符、UNC，并统一斜杠
-        /// </summary>
+        // ★ 修复2：空白输入返回空字符串
         private static string NormalizeCloudPath(string input)
         {
-            if (string.IsNullOrWhiteSpace(input)) return input;
-
+            if (string.IsNullOrWhiteSpace(input))
+                return string.Empty;
             string path = input.Trim().Replace('/', '\\');
-
-            // 已是 UNC 双反斜杠
             if (path.StartsWith(@"\\")) return path;
-
-            // 本地盘符（如 C:\ 或 D:\）
             if (path.Length >= 3 && path[1] == ':' && path[2] == '\\')
                 return path;
-
-            // 其他情况（如 192.168.1.100\share），自动补全 UNC
             return @"\\" + path;
         }
 
-        /// <summary>
-        /// 从云端复制指定计划的指定版本到本地（仅覆盖目标版本，不影响其他版本）
-        /// </summary>
         private static void SyncPlanFromCloud(string cloudRoot, string localDataRoot, string planName, string version)
         {
             string sourceDir = Path.Combine(cloudRoot, planName, version);
@@ -267,32 +250,25 @@ namespace ccd_helper
             string localPlanRoot = Path.Combine(localDataRoot, planName);
             string targetDir = Path.Combine(localPlanRoot, version);
 
-            // 只删除目标版本目录（用于干净覆盖/修复），保留其他版本目录不动
             if (Directory.Exists(targetDir))
             {
                 try { Directory.Delete(targetDir, true); } catch { }
             }
 
-            // 确保计划根目录存在
             if (!Directory.Exists(localPlanRoot))
-            {
                 Directory.CreateDirectory(localPlanRoot);
-            }
 
-            // 递归复制云端目标目录到本地
             CopyDirectoryRecursive(sourceDir, targetDir);
         }
 
         private static void CopyDirectoryRecursive(string source, string target)
         {
             Directory.CreateDirectory(target);
-
             foreach (string file in Directory.GetFiles(source))
             {
                 string destFile = Path.Combine(target, Path.GetFileName(file));
                 File.Copy(file, destFile, true);
             }
-
             foreach (string subDir in Directory.GetDirectories(source))
             {
                 string destSubDir = Path.Combine(target, Path.GetFileName(subDir));
@@ -300,32 +276,25 @@ namespace ccd_helper
             }
         }
 
-        /// <summary>
-        /// 软件版本强制校验（阻断式）
-        /// </summary>
         private static bool CheckSoftwareVersion()
         {
             string? dataPath = FindDataPath();
             if (dataPath == null) return false;
-
             string manifestPath = Path.Combine(dataPath, "version.json");
             if (!File.Exists(manifestPath))
             {
                 MessageBox.Show("缺少 Data/version.json 配置文件！", "错误");
                 return false;
             }
-
             try
             {
                 string json = File.ReadAllText(manifestPath);
                 var manifest = JsonSerializer.Deserialize<VersionManifest>(json);
                 if (manifest == null) return false;
-
-                string currentVersion = LOCAL_SOFTWARE_VERSION;
-                if (manifest.SoftwareVersion != currentVersion)
+                if (manifest.SoftwareVersion != LOCAL_SOFTWARE_VERSION)
                 {
                     MessageBox.Show(
-                        $"软件版本不匹配！\n当前程序版本：{currentVersion}\n所需数据版本：{manifest.SoftwareVersion}\n请更新软件。",
+                        $"软件版本不匹配！\n当前程序版本：{LOCAL_SOFTWARE_VERSION}\n所需数据版本：{manifest.SoftwareVersion}\n请更新软件。",
                         "版本错误",
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Error
@@ -334,13 +303,10 @@ namespace ccd_helper
                 }
                 return true;
             }
-            catch
-            {
-                return false;
-            }
+            catch { return false; }
         }
 
-        // ======================== 授权相关（原样保留） ========================
+        // ======================== 授权相关 ========================
 
         private static bool CheckLicenseFile()
         {
@@ -360,7 +326,6 @@ namespace ccd_helper
             if (dataDir == null) return false;
             string seqPath = Path.Combine(dataDir, "sequence.dat");
             if (!File.Exists(seqPath)) return false;
-
             try
             {
                 string encoded = File.ReadAllText(seqPath, System.Text.Encoding.UTF8).Trim();
@@ -424,11 +389,67 @@ namespace ccd_helper
         }
     }
 
-    // ======================== 数据模型（VersionManifest） ========================
+    // ======================== 数据模型 ========================
     public class VersionManifest
     {
         public string CloudBasePath { get; set; } = "";
         public string SoftwareVersion { get; set; } = "";
         public Dictionary<string, string> Plans { get; set; } = new();
+    }
+
+    // ======================== 闪屏窗体（SplashForm） ========================
+    public class SplashForm : Form
+    {
+        private readonly Label _label;
+
+        public SplashForm()
+        {
+            this.Text = "正在启动";
+            this.Size = new System.Drawing.Size(400, 140); // 稍大一些
+            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.ControlBox = false;
+            this.StartPosition = FormStartPosition.CenterScreen;
+            this.MaximizeBox = false;
+            this.MinimizeBox = false;
+            this.TopMost = true;
+
+            _label = new Label
+            {
+                Text = "正在从云盘同步数据，请稍候…",
+                Dock = DockStyle.Fill,
+                TextAlign = System.Drawing.ContentAlignment.MiddleCenter,
+                Font = new System.Drawing.Font("Microsoft YaHei", 14F) // 更大字体
+            };
+            this.Controls.Add(_label);
+
+            this.Load += SplashForm_Load;
+        }
+
+        private void SplashForm_Load(object sender, EventArgs e)
+        {
+            // 在后台线程执行，防止界面卡顿
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                try
+                {
+                    // 执行云同步（此过程可能较慢）
+                    bool ok = Program.SyncCloud(out string effectiveCloudRoot);
+                    // 同步结果不在此处处理，由后续校验逻辑决定
+                }
+                catch (Exception ex)
+                {
+                    // 记录错误但闪屏仍关闭，后续校验会提示
+                }
+                finally
+                {
+                    // 关闭闪屏窗体（必须在 UI 线程）
+                    this.Invoke(new Action(() =>
+                    {
+                        this.DialogResult = DialogResult.OK;
+                        this.Close();
+                    }));
+                }
+            });
+        }
     }
 }
