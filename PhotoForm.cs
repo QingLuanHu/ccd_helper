@@ -100,6 +100,11 @@ namespace ccd_helper
             buttonLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25));
             btnCancel = new Button { Text = "取消", Width = 150, Height = 50, Anchor = AnchorStyles.Left };
             btnOK = new Button { Text = "确定", Width = 150, Height = 50, Anchor = AnchorStyles.Right };
+            // 添加事件订阅
+            btnOK.Click += BtnOK_Click;
+            // 取消按钮直接设置 DialogResult，点击后自动关闭窗体并返回 Cancel
+            btnCancel.DialogResult = DialogResult.Cancel;
+            
             buttonLayout.Controls.Add(btnOK, 2, 0);
             buttonLayout.Controls.Add(btnCancel, 0, 0);
 
